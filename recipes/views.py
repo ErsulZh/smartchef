@@ -1,4 +1,5 @@
 import uuid
+import logging
 
 from django.conf import settings
 from django.shortcuts import redirect, render
@@ -12,12 +13,16 @@ from .models import SavedRecipe
 from .recipe_format import RecipeFormatError, parse_recipe_json, recipe_to_text
 
 
+logger = logging.getLogger(__name__)
+
+
 TEXT = {
     "kk": {
         "invalid_minutes": "Дайындау уақытын дұрыс таңдаңыз.",
         "missing_key": ".env файлын GEMINI_API_KEY мәнімен толтырыңыз.",
         "api_error": "Рецептті алу мүмкін болмады. Кейінірек қайталап көріңіз.",
         "empty_recipe": "Gemini рецепт қайтармады. Кейінірек қайталап көріңіз.",
+        "invalid_format": "Gemini рецепт пішімін дұрыс қайтармады. Кейінірек қайталап көріңіз.",
         "vegetarian_yes": "иә",
         "vegetarian_no": "жоқ",
     },
@@ -26,6 +31,7 @@ TEXT = {
         "missing_key": "Заполните GEMINI_API_KEY в файле .env.",
         "api_error": "Не удалось получить рецепт. Попробуйте позже.",
         "empty_recipe": "Gemini не вернул рецепт. Попробуйте позже.",
+        "invalid_format": "Gemini вернул рецепт в неверном формате. Попробуйте позже.",
         "vegetarian_yes": "да",
         "vegetarian_no": "нет",
     },
@@ -101,9 +107,11 @@ def index(request):
                                 }
                                 request.session["smartchef_cooking_draft"] = structured_recipe
                                 return redirect(f"{reverse('recipes:cooking')}?language={language}")
-                        except RecipeFormatError:
-                            error = TEXT[language]["api_error"]
+                        except RecipeFormatError as exc:
+                            logger.info("Gemini response format rejected: %s", exc)
+                            error = TEXT[language]["invalid_format"]
                         except Exception:
+                            logger.exception("Gemini recipe request failed")
                             error = TEXT[language]["api_error"]
 
     return render(request, "recipes/index.html", {
