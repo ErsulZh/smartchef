@@ -1,5 +1,6 @@
 import uuid
 import logging
+from pathlib import Path
 
 from django.conf import settings
 from django.shortcuts import redirect, render
@@ -16,11 +17,24 @@ from .recipe_format import RecipeFormatError, parse_recipe_json, recipe_to_text
 logger = logging.getLogger(__name__)
 
 
+def log_gemini_failure(error, api_key=""):
+    """Store a short, redacted local diagnostic for the development server."""
+    message = str(error).replace(api_key, "<redacted>").replace("\n", " ")[:500]
+    line = f"{type(error).__name__}: {message}\n"
+    logger.error("Gemini request failed: %s", line.strip())
+    try:
+        with (Path(settings.BASE_DIR) / "smartchef_debug.log").open("a", encoding="utf-8") as log_file:
+            log_file.write(line)
+    except OSError:
+        pass
+
+
 TEXT = {
     "kk": {
         "invalid_minutes": "Дайындау уақытын дұрыс таңдаңыз.",
         "missing_key": ".env файлын GEMINI_API_KEY мәнімен толтырыңыз.",
         "api_error": "Рецептті алу мүмкін болмады. Кейінірек қайталап көріңіз.",
+        "api_timeout": "Gemini API 15 секунд ішінде жауап бермеді. Интернетті немесе кейінірек қайталап көріңіз.",
         "empty_recipe": "Gemini рецепт қайтармады. Кейінірек қайталап көріңіз.",
         "invalid_format": "Gemini рецепт пішімін дұрыс қайтармады. Кейінірек қайталап көріңіз.",
         "vegetarian_yes": "иә",
@@ -30,6 +44,7 @@ TEXT = {
         "invalid_minutes": "Выберите корректное время приготовления.",
         "missing_key": "Заполните GEMINI_API_KEY в файле .env.",
         "api_error": "Не удалось получить рецепт. Попробуйте позже.",
+        "api_timeout": "Gemini API не ответил за 15 секунд. Проверьте интернет или попробуйте позже.",
         "empty_recipe": "Gemini не вернул рецепт. Попробуйте позже.",
         "invalid_format": "Gemini вернул рецепт в неверном формате. Попробуйте позже.",
         "vegetarian_yes": "да",
@@ -94,7 +109,7 @@ def index(request):
                         )
                         try:
                             client = genai.Client(api_key=api_key)
-                            interaction = client.interactions.create(model=model, input=prompt, timeout=30)
+                            interaction = client.interactions.create(model=model, input=prompt, timeout=15)
                             raw_recipe = (interaction.output_text or "").strip()
                             if not raw_recipe:
                                 error = TEXT[language]["empty_recipe"]
@@ -109,10 +124,11 @@ def index(request):
                                 return redirect(f"{reverse('recipes:cooking')}?language={language}")
                         except RecipeFormatError as exc:
                             logger.info("Gemini response format rejected: %s", exc)
+                            log_gemini_failure(exc)
                             error = TEXT[language]["invalid_format"]
-                        except Exception:
-                            logger.exception("Gemini recipe request failed")
-                            error = TEXT[language]["api_error"]
+                        except Exception as exc:
+                            log_gemini_failure(exc, api_key)
+                            error = TEXT[language]["api_timeout"] if "timed out" in str(exc).lower() else TEXT[language]["api_error"]
 
     return render(request, "recipes/index.html", {
         "language": language, "products": products, "minutes": minutes,
