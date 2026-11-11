@@ -9,6 +9,7 @@ from google import genai
 
 from .catalog import CATEGORIES, PRODUCTS, build_products
 from .models import SavedRecipe
+from .recipe_format import RecipeFormatError, parse_recipe_json, recipe_to_text
 
 
 TEXT = {
@@ -54,12 +55,14 @@ def index(request):
 
         if action == "language":
             request.session.pop("smartchef_draft", None)
+            request.session.pop("smartchef_cooking_draft", None)
             try:
                 selected_products, _ = build_products(selected_products, products, language)
             except ValueError:
                 selected_products = [item for item in selected_products if item in {p["id"] for p in PRODUCTS}]
         elif action == "generate":
             request.session.pop("smartchef_draft", None)
+            request.session.pop("smartchef_cooking_draft", None)
             if minutes not in {"15", "30", "60"}:
                 error = TEXT[language]["invalid_minutes"]
             else:
@@ -80,21 +83,26 @@ def index(request):
                             f"Жауапты тек {language_name} тілінде бер. Бір ғана рецепт жаса.\n"
                             f"Өнімдер: {combined}\nДайындау уақыты: {minutes} минут\n"
                             f"Вегетариандық шектеу: {vegetarian_text}\n\n"
-                            "Мына бөлімдерді бер: рецепт атауы, дайындау уақыты, ингредиенттер, "
-                            "нөмірленген қадамдар және бір кеңес."
+                            "Return only JSON with exactly title, ingredients and steps. Title: 1-120 characters; "
+                            "ingredients: 1-24 nonempty strings; steps: 1-12 nonempty strings. No markdown."
                         )
                         try:
                             client = genai.Client(api_key=api_key)
                             interaction = client.interactions.create(model=model, input=prompt, timeout=30)
-                            recipe = (interaction.output_text or "").strip()
-                            if not recipe:
+                            raw_recipe = (interaction.output_text or "").strip()
+                            if not raw_recipe:
                                 error = TEXT[language]["empty_recipe"]
                             else:
+                                structured_recipe = parse_recipe_json(raw_recipe)
+                                recipe = recipe_to_text(structured_recipe)
                                 request.session["smartchef_draft"] = {
                                     "token": str(uuid.uuid4()), "products": combined, "recipe": recipe,
                                     "language": language, "minutes": int(minutes), "vegetarian": vegetarian,
                                 }
-                                can_save = True
+                                request.session["smartchef_cooking_draft"] = structured_recipe
+                                return redirect(f"{reverse('recipes:cooking')}?language={language}")
+                        except RecipeFormatError:
+                            error = TEXT[language]["api_error"]
                         except Exception:
                             error = TEXT[language]["api_error"]
 
@@ -123,3 +131,12 @@ def saved_recipes(request):
     language = request.GET.get("language", "kk")
     language = language if language in TEXT else "kk"
     return render(request, "recipes/saved.html", {"saved_recipes": SavedRecipe.objects.all(), "language": language})
+
+
+def cooking(request):
+    language = request.GET.get("language", "kk")
+    language = language if language in TEXT else "kk"
+    recipe = request.session.get("smartchef_cooking_draft")
+    if not recipe:
+        return redirect(f"{reverse('recipes:index')}?language={language}")
+    return render(request, "recipes/cooking.html", {"language": language, "recipe": recipe})
