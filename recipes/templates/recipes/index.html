@@ -1,0 +1,59 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartChef</title>
+    <link rel="stylesheet" href="{% static 'recipes/style.css' %}">
+    <script src="{% static 'recipes/catalog.js' %}" defer></script>
+</head>
+<body>
+    <main class="app-shell">
+        <header class="hero">
+            <div><p class="eyebrow">SmartChef</p><h1>{% if language == "ru" %}Готовьте из того, что уже есть{% else %}Бар өнімнен дәмді ас дайындаңыз{% endif %}</h1><p>{% if language == "ru" %}Выберите продукты, настройте рецепт и сохраните удачный вариант.{% else %}Өнімдерді таңдаңыз, рецептті баптаңыз және сәтті нұсқаны сақтаңыз.{% endif %}</p></div>
+            <a class="text-link" href="{% url 'recipes:saved_recipes' %}?language={{ language }}">{% if language == "ru" %}Мои рецепты{% else %}Менің рецепттерім{% endif %}</a>
+        </header>
+        <p class="steps">{% if language == "ru" %}Выбор → Рецепт → Сохранение{% else %}Таңдау → Рецепт → Сақтау{% endif %}</p>
+
+        <form method="post" class="recipe-form">
+            {% csrf_token %}
+            <section class="catalog-panel">
+                <div class="panel-heading"><h2>{% if language == "ru" %}Выберите продукты{% else %}Өнімдерді таңдаңыз{% endif %}</h2><span id="catalog-count" aria-live="polite">0</span></div>
+                <label class="search-label" for="catalog-search">{% if language == "ru" %}Поиск в каталоге{% else %}Анықтамалықтан іздеу{% endif %}</label>
+                <input id="catalog-search" type="search" placeholder="{% if language == 'ru' %}Например, картофель{% else %}Мысалы, картоп{% endif %}">
+                <div class="category-filters" aria-label="{% if language == 'ru' %}Категории{% else %}Санаттар{% endif %}">
+                    <button type="button" class="filter-button is-active" data-category="all" aria-pressed="true">{% if language == "ru" %}Все{% else %}Барлығы{% endif %}</button>
+                    {% for category in categories %}<button type="button" class="filter-button" data-category="{{ category.id }}" aria-pressed="false">{{ category.emoji }} {% if language == "kk" %}{{ category.kk }}{% else %}{{ category.ru }}{% endif %}</button>{% endfor %}
+                </div>
+                <p id="catalog-empty" class="catalog-message" hidden>{% if language == "ru" %}Ничего не найдено.{% else %}Ештеңе табылмады.{% endif %}</p>
+                <div class="product-grid">
+                    {% for product in catalog_products %}
+                        <label class="product-card" data-product-id="{{ product.id }}" data-category="{{ product.category }}">
+                            <input type="checkbox" name="selected_products" value="{{ product.id }}" {% if product.id in selected_products %}checked{% endif %}>
+                            <span>{% if language == "kk" %}{{ product.kk }}{% else %}{{ product.ru }}{% endif %}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="settings-panel">
+                <fieldset class="language-switch"><legend>{% if language == "ru" %}Язык интерфейса{% else %}Интерфейс тілі{% endif %}</legend><label><input type="radio" name="language" value="kk" {% if language == "kk" %}checked{% endif %}> Қазақша</label><label><input type="radio" name="language" value="ru" {% if language == "ru" %}checked{% endif %}> Русский</label><button type="submit" name="action" value="language">{% if language == "ru" %}Применить язык{% else %}Тілді қолдану{% endif %}</button></fieldset>
+                <div class="selection-heading"><h2>{% if language == "ru" %}Мой набор{% else %}Менің жиынтығым{% endif %}</h2><button id="catalog-clear" type="button">{% if language == "ru" %}Очистить выбор{% else %}Таңдауды тазалау{% endif %}</button></div>
+                <div id="catalog-selected" class="selected-tags"><p class="catalog-message">{% if language == "ru" %}Выберите продукты слева.{% else %}Сол жақтан өнімдерді таңдаңыз.{% endif %}</p></div>
+                <label for="products">{% if language == "ru" %}Дополнительные продукты{% else %}Қосымша өнімдер{% endif %}</label>
+                <textarea id="products" name="products" rows="3" placeholder="{% if language == 'ru' %}Можно написать свои продукты{% else %}Өз өніміңізді жаза аласыз{% endif %}">{{ products }}</textarea>
+                <label for="minutes">{% if language == "ru" %}Время приготовления{% else %}Дайындау уақыты{% endif %}</label>
+                <select id="minutes" name="minutes"><option value="15" {% if minutes == "15" %}selected{% endif %}>15 {% if language == "ru" %}минут{% else %}минут{% endif %}</option><option value="30" {% if minutes == "30" %}selected{% endif %}>30 {% if language == "ru" %}минут{% else %}минут{% endif %}</option><option value="60" {% if minutes == "60" %}selected{% endif %}>60 {% if language == "ru" %}минут{% else %}минут{% endif %}</option></select>
+                <label class="check-row"><input type="checkbox" name="vegetarian" value="1" {% if vegetarian %}checked{% endif %}> {% if language == "ru" %}Без мяса{% else %}Етсіз{% endif %}</label>
+                <button class="primary-button" type="submit" name="action" value="generate">{% if language == "ru" %}Создать рецепт{% else %}Рецепт жасау{% endif %}</button>
+            </section>
+        </form>
+
+        {% if error %}<p class="message error" role="alert">{{ error }}</p>{% endif %}
+        {% if recipe %}<section class="result-card"><h2>{% if language == "ru" %}Ваш рецепт{% else %}Сіздің рецептіңіз{% endif %}</h2><div>{{ recipe }}</div></section>{% endif %}
+        {% if can_save %}<form class="save-form" method="post" action="{% url 'recipes:save_recipe' %}">{% csrf_token %}<button class="accent-button" type="submit">{% if language == "ru" %}Сохранить рецепт{% else %}Рецептті сақтау{% endif %}</button></form>{% endif %}
+    </main>
+    {{ catalog_data|json_script:"product-catalog-data" }}
+</body>
+</html>
